@@ -1,0 +1,2 @@
+# Systronix NTP
+An extremely simple library implementation of a timy portion of the NTP protocol.  This library sends a NTP client packet to the selected NTP server, extracts and returns a Unix timestamp from the server's transmit timestamp.  There is some debug info available.
