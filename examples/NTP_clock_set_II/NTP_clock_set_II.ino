@@ -78,7 +78,7 @@ void setup()
 	pinMode(4, INPUT_PULLUP);
 
 	pinMode(ETH_RST, OUTPUT);				// This drives the pin low. Don't see any way to avoid that
-	pinMode(PERIF_RST, OUTPUT);			// High after POR, low when declared output
+	pinMode(PERIF_RST, OUTPUT);				// High after POR, low when declared output
 	digitalWrite(ETH_RST, LOW);				// assert it deliberately
 	digitalWrite(PERIF_RST, LOW);			// low after POR anyway
 
@@ -92,9 +92,9 @@ void setup()
 	digitalWrite(PERIF_RST, HIGH);
 
 	delay(1);								// time for WIZ850io to reset
-	FETs.setup (I2C_FET);						// constructor for SALT_FETs, and PCA9557
+	FETs.setup (I2C_FET);					// constructor for SALT_FETs, and PCA9557
 	FETs.begin ();
-	FETs.init ();								// lights, fans, and alarms all off
+	FETs.init ();							// lights, fans, and alarms all off
 
 
 	Serial.begin(115200);					// Open serial communications and wait for port to open:
@@ -128,19 +128,11 @@ void setup()
 //
 
 boolean	clock_set = false;					// flag so we set the clock only once
-boolean summary_flag = true;				// flag to tell us that we've printed the 10 minute summary; true at startup because pointless
 boolean	verbose = false;					// packet dump after every transaction
 int32_t	diff;								// difference between NTP time and RTC time; positive diff: NTP leads RTC
 int32_t	min_diff = 0x7FFFFFFF;				// worst case RTC lag time
 int32_t	max_diff = 0;						// worst case NTP lag time
 uint8_t	inbyte;
-
-uint32_t NTP_wait_timer_start_time;
-uint32_t timer;
-uint32_t timer_min = 0xFFFFFFFF;
-uint32_t timer_max = 0;
-uint32_t timer_sum = 0;
-uint32_t timer_avg;
 
 
 void loop()
@@ -152,56 +144,66 @@ void loop()
 	uint8_t	ret_val;
 
 	Serial.printf ("@%.2d:%.2d:%.2d.%.4d ask for time from %s\r\n",
-		(uint8_t)((event_secs % 86400L) / 3600),	// hour
-		(uint8_t)((event_secs % 3600) / 60),		// minute
-		(uint8_t)(event_secs % 60),					// second
-		(uint8_t)(event_millis % 1000),				// millisecond
+		(uint8_t)((event_secs % 86400L) / 3600),			// hour
+		(uint8_t)((event_secs % 3600) / 60),				// minute
+		(uint8_t)(event_secs % 60),							// second
+		(uint8_t)(event_millis % 1000),						// millisecond
 		ntp.time_server_domain_name_ptr[ntp.time_server_name_index]);
 
-	ret_val = ntp.unix_ts_get (&epoch, 120);	// 120mS timeout
+	ret_val = ntp.unix_ts_get (&epoch, 120);				// get the unix timestamp; 120mS timeout
 	if (SUCCESS == ret_val)
 		{
-		Serial.printf ("\tUTC time: %.2d:%.2d:%.2d\n\n",		// print UTC time
-			(uint8_t)((epoch  % 86400L) / 3600),				// hour
-			(uint8_t)((epoch % 3600) / 60),						// minute
-			(uint8_t)(epoch % 60));								// second
-		Serial.printf ("\tUnix ts: %ld\n", epoch);
-		
-		if (clock_set)
+		if ((0 < ntp.packet_buffer.as_struct.stratum) && (16 > ntp.packet_buffer.as_struct.stratum))
 			{
-			rtc_ts = RTC.get();									// get time from RTC
-			Serial.printf ("\tRTC ts:  %lu\n", rtc_ts);			// print RTC time stamp
-			diff = (int32_t)(epoch - rtc_ts);
-			min_diff = min (min_diff, diff);
-			max_diff = max (max_diff, diff);
-			Serial.printf ("\tNTP Unix/RTC difference: %ld (NTP max lag: %ld; NTP max lead: %ld)\n\n", diff, min_diff, max_diff);
-			if (verbose)
-				ntp.NTP_packet_dump ();
-			}
-		else
-			{
-			if (RTC.set (epoch))
+			Serial.printf ("\tUTC time: %.2d:%.2d:%.2d\n\n",	// print UTC time
+				(uint8_t)((epoch  % 86400L) / 3600),			// hour
+				(uint8_t)((epoch % 3600) / 60),					// minute
+				(uint8_t)(epoch % 60));							// second
+			Serial.printf ("\tUnix ts: %ld\n", epoch);
+			
+			if (clock_set)
 				{
-				Serial.printf ("RTC set to %lu\n", epoch);
-				clock_set = true;
-				ntp.NTP_packet_dump ();
+				rtc_ts = RTC.get();								// get time from RTC
+				Serial.printf ("\tRTC ts:  %lu\n", rtc_ts);		// print RTC time stamp
+				diff = (int32_t)(epoch - rtc_ts);
+				min_diff = min (min_diff, diff);
+				max_diff = max (max_diff, diff);
+				Serial.printf ("\tNTP Unix/RTC difference: %ld (NTP max lag: %ld; NTP max lead: %ld)\n\n", diff, min_diff, max_diff);
+				if (verbose)
+					ntp.NTP_packet_dump ();
 				}
 			else
-				Serial.printf ("RTC.set() failed\n");			// can't know why; RTC.set() returns boolean
+				{
+				if (RTC.set (epoch))
+					{
+					Serial.printf ("RTC set to %lu\n", epoch);
+					clock_set = true;
+					ntp.NTP_packet_dump ();
+					}
+				else
+					Serial.printf ("RTC.set() failed\n");		// can't know why; RTC.set() returns boolean
+				}
 			}
+		else if (0 == ntp.packet_buffer.as_struct.stratum)
+			Serial.printf ("\tkiss o' death message: %c%c%c%c (%ld)\n\n", ntp.packet_buffer.as_array[12], ntp.packet_buffer.as_array[13], ntp.packet_buffer.as_array[14], ntp.packet_buffer.as_array[15]);
+		else // if (15 < ntp.packet_buffer.as_struct.stratum)
+			Serial.printf ("\tunsychronized server\n\n");
 		}
 	else if (TIMEOUT == ret_val)
 		Serial.printf ("NTP request timeout\n\n");
 	else
 		Serial.printf ("NTP request fail\n\n");
 
-	delay (10000);													// wait ten seconds before asking for the time again
+	delay (10000);											// wait ten seconds before asking for the time again
 
 	if (0 < Serial.available())
 		{
 		inbyte = Serial.read();
 		if (('v' == (inbyte)) || ('V' == (inbyte)))
+			{
 			verbose = !verbose;
+			Serial.printf("\r\nverbose: %s ", verbose ? "true" : "false");
+			}
 		}
 
 	Ethernet.maintain();
