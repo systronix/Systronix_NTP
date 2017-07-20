@@ -13,9 +13,9 @@
 
 //---------------------------< D E F I N E S >----------------------------------------------------------------
 
-//#ifndef	ETH_CS_PIN
+#ifndef	ETH_CS_PIN
 #define	ETH_CS_PIN			10
-//#endif
+#endif
 
 #define	NTP_PACKET_SIZE		48				// NTP time packet is 48 bytes
 #define	SEVENTY_YEARS		2208988800UL	// offset from 1900-01-01T00:00:00 to Unix epoch 1970-01-01T00:00:00
@@ -85,7 +85,7 @@ class Systronix_NTP
 
 		uint8_t		mac[6];								// Teensy mac goes here
 
-		uint8_t		setup (uint8_t time_server_name_index);
+		uint8_t		setup (uint8_t time_server_name_index = POOL);
 		uint8_t		begin(void);
 		uint8_t		init(void);
 

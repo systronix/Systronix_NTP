@@ -1,4 +1,4 @@
-// NTP.cpp
+// Systronix_NTP.cpp
 
 //---------------------------< I N C L U D E S >--------------------------------------------------------------
 
@@ -12,7 +12,7 @@ EthernetUDP Udp;						// A UDP instance to let us send and receive packets over 
 //
 //
 
-uint8_t Systronix_NTP::setup (uint8_t server_name_index = POOL)
+uint8_t Systronix_NTP::setup (uint8_t server_name_index)
 	{
 	teensyMAC(mac);							// get Teensy MAC address
 
@@ -23,8 +23,6 @@ uint8_t Systronix_NTP::setup (uint8_t server_name_index = POOL)
 		return FAIL;
 		}
 
-//	Serial.printf ("ethernet begin done\n");
-
 	Ethernet.init (ETH_CS_PIN);
 
 	if (0 == Udp.begin (LOCAL_PORT))		// open a udp socket
@@ -33,10 +31,7 @@ uint8_t Systronix_NTP::setup (uint8_t server_name_index = POOL)
 		return FAIL;
 		}
 
-//	Serial.printf ("Udp.begin(%d) done\n", LOCAL_PORT);
-
 	time_server_name_index = server_name_index;
-//	Serial.printf ("getting time from server: %s\n", time_server_domain_name_ptr[time_server_name_index]);
 	return SUCCESS;
 	}
 
@@ -90,7 +85,7 @@ uint8_t Systronix_NTP::unix_ts_get (time_t* unix_ts_ptr, uint32_t timeout_arg)
 	
 	uint32_t	parse_ret_val;
 
-	NTP_request (time_server_domain_name_ptr[NIST]);
+	NTP_request (time_server_domain_name_ptr[time_server_name_index]);
 	NTP_wait_timer_start_time = millis ();						// mark the start time
 	NTP_timeout = NTP_wait_timer_start_time + ((120 > timeout_arg) ? 120 : timeout_arg);	// timeout not less than 120mS
 
@@ -145,37 +140,37 @@ void Systronix_NTP::NTP_request (char* domain_name_ptr)
 //	int32_t ret_val;
 	
 	memset (packet_buffer.as_array, 0, NTP_PACKET_SIZE);	// set all bytes in the buffer to 0
-												// Initialize values needed to form NTP request (see URL above for details)
+
 	packet_buffer.as_struct.mode = 0b00100011;				// msb to lsb: LI (00 - server message); Version (100 4);  Mode (011 = client) (0x23)
 
-															// all NTP fields have been given values, now send a packet requesting a timestamp
 	if (!Udp.beginPacket (domain_name_ptr, 123))			//NTP requests are to port 123; returns 1 if successful
 		Serial.printf ("Udp.beginPacket() returned 0\n@domain: %s\n", domain_name_ptr);	// experiment to find out what gets returned on success
 	
 	if (!Udp.write (packet_buffer.as_array, NTP_PACKET_SIZE))
 		Serial.printf ("Udp.write() returned 0\n");			// experiment to find out what gets returned on success
-//	Serial.printf ("Udp.write() ok\n");			// experiment to find out what gets returned on success
 
 	if (!Udp.endPacket())
 		Serial.printf ("Udp.endPacket() returned 0\n");		// experiment to find out what gets returned on success
-//	Serial.printf ("Udp.endPacket() ok\n");			// experiment to find out what gets returned on success
 	}
 
 
 //---------------------------< N T P _ P A C K E T _ D U M P >------------------------------------------------
 //
-// dump the content of the received NTP packet
+// dump the content of the received NTP packet.  Decode kiss o' death and stratum 1 server messages
 //
 
 void Systronix_NTP::NTP_packet_dump (void)
 	{
 	uint32_t	temp32;
+	double		one_bit = 1.0/4294967296.0;
+
+//	Serial.printf ("one_bit: %e\n", one_bit);
 
 	Serial.printf ("NTP rx packet dump:\n");
 	Serial.printf ("\t [0]: 0x%.2X\n", packet_buffer.as_array[0]);
-	Serial.printf ("\t\t[0]: %d - leap indicator\n", packet_buffer.as_struct.mode >> 6);
-	Serial.printf ("\t\t[0]: %d - version\n", (packet_buffer.as_struct.mode & 0b00111000) >> 3);
-	Serial.printf ("\t\t[0]: %d - mode\n", packet_buffer.as_struct.mode & 0b00000111);
+	Serial.printf ("\t\t[7..6]: %d - leap indicator\n", packet_buffer.as_struct.mode >> 6);
+	Serial.printf ("\t\t[5..3]: %d - version\n", (packet_buffer.as_struct.mode & 0b00111000) >> 3);
+	Serial.printf ("\t\t[2..0]: %d - mode\n", packet_buffer.as_struct.mode & 0b00000111);
 	Serial.printf ("\t [1]: 0x%.2X (%d) - stratum\n", packet_buffer.as_struct.stratum, packet_buffer.as_struct.stratum);
 	Serial.printf ("\t [2]: 0x%.2X (%d) - poll\n", packet_buffer.as_struct.poll, packet_buffer.as_struct.poll);
 	Serial.printf ("\t [3]: 0x%.2X (%d) - precision\n", packet_buffer.as_struct.precision, packet_buffer.as_struct.precision);
@@ -193,25 +188,25 @@ void Systronix_NTP::NTP_packet_dump (void)
 	Serial.printf ("\t[16]: 0x%.8X (%lu) - reference TS (int)\n", temp32, temp32);
 
 	temp32 = __builtin_bswap32 (packet_buffer.as_struct.reference_TS_frac);
-	Serial.printf ("\t[20]: 0x%.8X (%lu) - reference TS (frac)\n", temp32, temp32);
+	Serial.printf ("\t[20]: 0x%.8X (%0.8f) - reference TS (frac)\n", temp32, temp32 * one_bit);
 
 	temp32 = __builtin_bswap32 (packet_buffer.as_struct.origin_TS_int);
 	Serial.printf ("\t[24]: 0x%.8X (%lu) - origin TS (int)\n", temp32, temp32);
 
 	temp32 = __builtin_bswap32 (packet_buffer.as_struct.origin_TS_frac);
-	Serial.printf ("\t[28]: 0x%.8X (%lu) - origin TS (frac)\n", temp32, temp32);
+	Serial.printf ("\t[28]: 0x%.8X (%0.8f) - origin TS (frac)\n", temp32, temp32 * one_bit);
 
 	temp32 = __builtin_bswap32 (packet_buffer.as_struct.receive_TS_int);
 	Serial.printf ("\t[32]: 0x%.8X (%lu) - receive TS (int)\n", temp32, temp32);
 
 	temp32 = __builtin_bswap32 (packet_buffer.as_struct.receive_TS_frac);
-	Serial.printf ("\t[36]: 0x%.8X (%lu) - receive TS (frac)\n", temp32, temp32);
+	Serial.printf ("\t[36]: 0x%.8X (%0.8f) - receive TS (frac)\n", temp32, temp32 * one_bit);
 
 	temp32 = __builtin_bswap32 (packet_buffer.as_struct.transmit_TS_int);
 	Serial.printf ("\t[40]: 0x%.8X (%lu) - transmit TS (int)\n", temp32, temp32);
 
 	temp32 = __builtin_bswap32 (packet_buffer.as_struct.transmit_TS_frac);
-	Serial.printf ("\t[44]: 0x%.8X (%lu) - transmit TS (frac)\n\n", temp32, temp32);
+	Serial.printf ("\t[44]: 0x%.8X (%0.8f) - transmit TS (frac)\n\n", temp32, temp32 * one_bit);
 
 	if (0 == packet_buffer.as_struct.stratum)								// if stratum is 0
 		Serial.printf ("\tkiss o' death message: %c%c%c%c\n\n", packet_buffer.as_array[12], packet_buffer.as_array[13], packet_buffer.as_array[14], packet_buffer.as_array[15]);
