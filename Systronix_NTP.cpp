@@ -20,7 +20,7 @@ uint8_t Systronix_NTP::setup (uint8_t server_name_index)
 	if (0 == Ethernet.begin(mac))			// default 60 seconds
 		{
 		Serial.printf ("\nFailed to configure Ethernet using DHCP\n");
-		return FAIL;
+		return TIMEOUT;
 		}
 
 	Ethernet.init (ETH_CS_PIN);
